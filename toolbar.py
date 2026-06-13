@@ -2,6 +2,7 @@ import FreeCAD
 import FreeCADGui
 
 import tree
+from commands.validate_process import run_validation, simulation_allowed
 
 
 COMMANDS = [
@@ -140,6 +141,25 @@ class RunSimulationCommand(_BaseCommand):
         "\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430."
     )
 
+    def Activated(self):
+        allowed, reason = simulation_allowed()
+        if not allowed:
+            FreeCAD.Console.PrintWarning(
+                "\u0417\u0430\u043f\u0443\u0441\u043a "
+                "\u043c\u043e\u0434\u0435\u043b\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u044f "
+                "\u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d: {0}\n".format(
+                    reason
+                )
+            )
+            try:
+                from PySide import QtGui
+
+                QtGui.QMessageBox.warning(None, self.name, reason)
+            except Exception:
+                pass
+            return
+        _show_action_feedback(self.name, self.message)
+
 
 class ValidateCommand(_BaseCommand):
     name = "\u0412\u0430\u043b\u0438\u0434\u0438\u0440\u043e\u0432\u0430\u0442\u044c"
@@ -149,12 +169,11 @@ class ValidateCommand(_BaseCommand):
         "\u043f\u0440\u0430\u0432\u0438\u043b\u0430\u043c\u0438 \u0438 "
         "\u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u044f\u043c\u0438"
     )
-    message = (
-        "\u0412\u0430\u043b\u0438\u0434\u0430\u0446\u0438\u044f \u043f\u043e\u043a\u0430 "
-        "\u0440\u0430\u0431\u043e\u0442\u0430\u0435\u0442 \u043a\u0430\u043a "
-        "\u0431\u0430\u0437\u043e\u0432\u0430\u044f \u0437\u0430\u0433\u043b\u0443\u0448\u043a\u0430 "
-        "\u0438\u043d\u0442\u0435\u0440\u0444\u0435\u0439\u0441\u0430."
-    )
+    def Activated(self):
+        run_validation()
+
+    def IsActive(self):
+        return FreeCAD.ActiveDocument is not None
 
 
 class ReportCommand(_BaseCommand):

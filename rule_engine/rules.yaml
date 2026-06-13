@@ -1,0 +1,193 @@
+schema_version: 1
+
+validation:
+  strictness: normal
+
+material_policy:
+  source_priority:
+    - process_form
+    - freecad_object
+    - default
+  default_material: "20Х"
+  allow_default_material: true
+  default_material_severity: warning
+  missing_material_severity: error
+  unknown_material_severity: warning
+
+material_aliases:
+  "20X": "20Х"
+  "20Cr": "20Х"
+  "U8": "У8"
+
+stage_aliases:
+  Heating: heating
+  Cementation: carburizing
+  Carburizing: carburizing
+  Diffusion: diffusion
+  Quenching: quenching
+  Tempering: tempering
+
+stage_labels:
+  heating: "Нагрев"
+  carburizing: "Цементация"
+  diffusion: "Диффузионная выдержка"
+  quenching: "Закалка"
+  tempering: "Отпуск"
+
+process_rules:
+  carburizing:
+    required_stages:
+      - heating
+      - carburizing
+      - quenching
+      - tempering
+    allowed_order:
+      - heating
+      - carburizing
+      - diffusion
+      - quenching
+      - tempering
+    missing_stage_severity: error
+    sequence_severity: error
+
+stage_rules:
+  heating:
+    enabled: true
+    required_properties:
+      - Temperature
+      - DurationMinutes
+      - Atmosphere
+    ranges:
+      Temperature: {min: 700.0, max: 1000.0, severity: error}
+      DurationMinutes: {min: 1.0, max: 300.0, severity: error}
+    allowed_values:
+      Atmosphere:
+        values: [Protective, Endogas, Vacuum, Air]
+        severity: warning
+
+  carburizing:
+    enabled: true
+    required_properties:
+      - Temperature
+      - DurationHours
+      - CarbonPotential
+      - Atmosphere
+      - CaseDepthTarget
+    ranges:
+      Temperature: {min: 900.0, max: 950.0, severity: error}
+      DurationHours: {min: 0.5, max: 24.0, severity: error}
+      CarbonPotential: {min: 0.8, max: 1.3, severity: error}
+      CaseDepthTarget: {min: 0.3, max: 1.5, severity: warning}
+    allowed_values:
+      Atmosphere:
+        values: [Endogas, Methanol, NaturalGas, Vacuum]
+        severity: warning
+
+  diffusion:
+    enabled: true
+    required_properties:
+      - Temperature
+      - DurationMinutes
+      - Atmosphere
+    ranges:
+      Temperature: {min: 800.0, max: 950.0, severity: error}
+      DurationMinutes: {min: 1.0, max: 360.0, severity: error}
+
+  quenching:
+    enabled: true
+    required_properties:
+      - AustenitizingTemperature
+      - HoldMinutes
+      - QuenchMedium
+    ranges:
+      AustenitizingTemperature: {min: 780.0, max: 900.0, severity: error}
+      HoldMinutes: {min: 1.0, max: 180.0, severity: error}
+      MediumTemperature: {min: 0.0, max: 180.0, severity: warning}
+      AgitationRate: {min: 0.0, max: 5.0, severity: warning}
+    allowed_values:
+      QuenchMedium:
+        values: [Oil, Water, Polymer, Air]
+        severity: error
+
+  tempering:
+    enabled: true
+    required_properties:
+      - Temperature
+      - DurationMinutes
+      - Cycles
+    ranges:
+      Temperature: {min: 140.0, max: 650.0, severity: error}
+      DurationMinutes: {min: 30.0, max: 600.0, severity: error}
+      Cycles: {min: 1, max: 3, severity: error}
+    allowed_values:
+      CoolingMethod:
+        values: [Air, Furnace, Oil]
+        severity: warning
+
+materials:
+  "20Х":
+    compatible_processes: [carburizing]
+    quench_media: [Oil, Polymer]
+    quench_medium_severity: error
+    targets:
+      case_depth_mm: {min: 0.3, max: 1.5, severity: error}
+      surface_hardness_hrc: {min: 58.0, max: 64.0, severity: warning}
+      core_hardness_hrc: {min: 28.0, max: 42.0, severity: warning}
+
+  "У8":
+    compatible_processes: []
+    incompatible_severity: error
+    incompatibility_reason: "Содержание углерода слишком велико для демонстрационного режима цементации."
+    recommendation: "Используйте низкоуглеродистую легированную сталь или другой процесс."
+    quench_media: [Water, Oil]
+    targets:
+      case_depth_mm: {min: 0.0, max: 0.2, severity: error}
+      surface_hardness_hrc: {min: 58.0, max: 65.0, severity: warning}
+      core_hardness_hrc: {min: 45.0, max: 62.0, severity: warning}
+
+target_rules:
+  defaults:
+    case_depth_mm: {min: 0.3, max: 1.5, severity: error}
+    surface_hardness_hrc: {min: 58.0, max: 64.0, severity: warning}
+    core_hardness_hrc: {min: 25.0, max: 45.0, severity: warning}
+  case_depth_consistency:
+    enabled: true
+    coefficient: 0.30
+    tolerance_mm: 0.15
+    severity: warning
+
+geometry_rules:
+  check_thin_walls:
+    enabled: true
+    min_thickness_mm: 2.0
+    max_face_pairs: 5000
+    severity: warning
+  check_sharp_edges:
+    enabled: true
+    min_radius_mm: 0.3
+    severity: warning
+  check_holes:
+    enabled: true
+    small_diameter_mm: 6.0
+    severity: warning
+  check_cavities:
+    enabled: true
+    severity: warning
+  check_section_transitions:
+    enabled: true
+    max_face_area_ratio: 10.0
+    severity: warning
+  check_surface_to_volume:
+    enabled: true
+    min_ratio_per_mm: 0.1
+    max_ratio_per_mm: 1.0
+    severity: warning
+  check_slender_elements:
+    enabled: true
+    max_ratio: 10.0
+    severity: warning
+  check_grooves:
+    enabled: true
+    severity: warning
+
+messages: {}

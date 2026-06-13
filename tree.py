@@ -25,6 +25,15 @@ STAGE_LIBRARY = {
             ("App::PropertyFloat", "CaseDepthTarget", "Target case depth, mm", 0.8),
         ],
     },
+    "DiffusionStage": {
+        "label": "DiffusionStage",
+        "stage_type": "Diffusion",
+        "properties": [
+            ("App::PropertyFloat", "Temperature", "Diffusion temperature, C", 900.0),
+            ("App::PropertyFloat", "DurationMinutes", "Diffusion time, min", 60.0),
+            ("App::PropertyString", "Atmosphere", "Diffusion atmosphere", "Endogas"),
+        ],
+    },
     "QuenchingStage": {
         "label": "QuenchingStage",
         "stage_type": "Quenching",
@@ -56,6 +65,65 @@ DEFAULT_STAGE_ORDER = [
 ]
 
 
+class StageProxy:
+    """Persistent proxy for editable process stages."""
+
+    Type = "CHTStage"
+
+    def __init__(self, obj=None):
+        self.Object = None
+        if obj is not None:
+            self.attach(obj)
+
+    def attach(self, obj):
+        self.Object = obj
+        obj.Proxy = self
+
+    def execute(self, _obj):
+        return
+
+    def onDocumentRestored(self, obj):
+        self.Object = obj
+
+    def dumps(self):
+        return None
+
+    def loads(self, _state):
+        return
+
+
+class StageViewProvider:
+    """View provider that explicitly permits normal FreeCAD deletion."""
+
+    def __init__(self, view_object=None):
+        self.ViewObject = None
+        self.Object = None
+        if view_object is not None:
+            self.attach(view_object)
+            view_object.Proxy = self
+
+    def attach(self, view_object):
+        self.ViewObject = view_object
+        self.Object = view_object.Object
+
+    def claimChildren(self):
+        return []
+
+    def onDelete(self, view_object, _subelements):
+        obj = getattr(view_object, "Object", None) or self.Object
+        if obj is not None:
+            for parent in list(getattr(obj, "InList", [])):
+                if parent.isDerivedFrom("App::DocumentObjectGroup"):
+                    parent.removeObject(obj)
+        return True
+
+    def dumps(self):
+        return None
+
+    def loads(self, _state):
+        return
+
+
 def _ensure_property(obj, prop_type, prop_name, description, default_value=None):
     if prop_name not in obj.PropertiesList:
         obj.addProperty(prop_type, prop_name, PROPERTY_GROUP, description)
@@ -65,8 +133,10 @@ def _ensure_property(obj, prop_type, prop_name, description, default_value=None)
 
 def _ensure_process_properties(process):
     _ensure_property(process, "App::PropertyString", "ProcessType", "Type of process", "Chemical Heat Treatment")
+    _ensure_property(process, "App::PropertyString", "ProcessKey", "Rule set key", "carburizing")
+    _ensure_property(process, "App::PropertyLink", "TargetObject", "Related solid model")
     _ensure_property(process, "App::PropertyString", "TargetPart", "Name of the related part or body", "")
-    _ensure_property(process, "App::PropertyString", "Material", "Part material", "Steel")
+    _ensure_property(process, "App::PropertyString", "Material", "Part material", "20\u0425")
     _ensure_property(process, "App::PropertyFloat", "TargetCaseDepth", "Required case depth, mm", 0.8)
     _ensure_property(process, "App::PropertyFloat", "TargetSurfaceHardness", "Required surface hardness, HRC", 62.0)
     _ensure_property(process, "App::PropertyFloat", "CoreHardnessTarget", "Required core hardness, HRC", 36.0)
@@ -86,6 +156,17 @@ def _apply_stage_schema(stage, stage_name):
 
     for prop_type, prop_name, description, default_value in schema["properties"]:
         _ensure_property(stage, prop_type, prop_name, description, default_value)
+
+    _ensure_stage_proxies(stage)
+
+
+def _ensure_stage_proxies(stage):
+    if not isinstance(getattr(stage, "Proxy", None), StageProxy):
+        StageProxy(stage)
+
+    if FreeCAD.GuiUp and hasattr(stage, "ViewObject"):
+        if not isinstance(getattr(stage.ViewObject, "Proxy", None), StageViewProvider):
+            StageViewProvider(stage.ViewObject)
 
 
 def get_active_document():
@@ -111,14 +192,50 @@ def ensure_process_group(document=None):
 
     _ensure_process_properties(process)
     _assign_target_part(document, process)
+    upgrade_process_objects(document)
     return process
 
 
 def _assign_target_part(document, process):
+    if "TargetObject" in process.PropertiesList and process.TargetObject is not None:
+        if not process.TargetPart:
+            process.TargetPart = process.TargetObject.Label
+        return
+
+    if process.TargetPart:
+        target = document.getObject(process.TargetPart)
+        if target is None:
+            target = next(
+                (
+                    obj
+                    for obj in document.Objects
+                    if getattr(obj, "Label", "") == process.TargetPart
+                ),
+                None,
+            )
+        if target is not None and hasattr(target, "Shape"):
+            process.TargetObject = target
+            return
+
     for obj in document.Objects:
         if getattr(obj, "TypeId", "") == "PartDesign::Body":
+            process.TargetObject = obj
             process.TargetPart = obj.Label
             return
+
+    candidates = []
+    for obj in document.Objects:
+        if not hasattr(obj, "Shape"):
+            continue
+        try:
+            if not obj.Shape.isNull():
+                candidates.append(obj)
+        except Exception:
+            continue
+
+    if len(candidates) == 1:
+        process.TargetObject = candidates[0]
+        process.TargetPart = candidates[0].Label
 
 
 def _next_stage_object_name(process, base_name):
@@ -187,6 +304,19 @@ def add_stage_to_process(stage_name, document=None):
     stage = create_stage(document, process, stage_name)
     document.recompute()
     return stage
+
+
+def upgrade_process_objects(document=None):
+    document = document or FreeCAD.ActiveDocument
+    process = find_process_group(document)
+    if process is None:
+        return None
+
+    _ensure_process_properties(process)
+    for obj in list(getattr(process, "Group", [])):
+        if "StageType" in getattr(obj, "PropertiesList", []):
+            _ensure_stage_proxies(obj)
+    return process
 
 
 def get_stage_names():
