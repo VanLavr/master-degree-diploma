@@ -106,6 +106,25 @@ class ValidationEngineTests(unittest.TestCase):
         self.assertEqual(second_model, self.process.TargetObject)
         self.assertEqual(second_model.Label, self.process.TargetPart)
 
+    def test_stage_has_persistent_proxy_and_can_be_deleted(self):
+        stage = self.stage("Cementation")
+        stage_name = stage.Name
+
+        self.assertIsInstance(stage.Proxy, tree.StageProxy)
+        self.document.removeObject(stage_name)
+        self.document.recompute()
+
+        self.assertIsNone(self.document.getObject(stage_name))
+        self.assertNotIn(stage_name, [item.Name for item in self.process.Group])
+
+    def test_existing_stage_without_proxy_is_upgraded(self):
+        stage = self.stage("Cementation")
+        stage.Proxy = None
+
+        tree.upgrade_process_objects(self.document)
+
+        self.assertIsInstance(stage.Proxy, tree.StageProxy)
+
     def test_incompatible_u8_material_is_invalid(self):
         self.process.Material = "У8"
 

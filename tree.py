@@ -65,6 +65,65 @@ DEFAULT_STAGE_ORDER = [
 ]
 
 
+class StageProxy:
+    """Persistent proxy for editable process stages."""
+
+    Type = "CHTStage"
+
+    def __init__(self, obj=None):
+        self.Object = None
+        if obj is not None:
+            self.attach(obj)
+
+    def attach(self, obj):
+        self.Object = obj
+        obj.Proxy = self
+
+    def execute(self, _obj):
+        return
+
+    def onDocumentRestored(self, obj):
+        self.Object = obj
+
+    def dumps(self):
+        return None
+
+    def loads(self, _state):
+        return
+
+
+class StageViewProvider:
+    """View provider that explicitly permits normal FreeCAD deletion."""
+
+    def __init__(self, view_object=None):
+        self.ViewObject = None
+        self.Object = None
+        if view_object is not None:
+            self.attach(view_object)
+            view_object.Proxy = self
+
+    def attach(self, view_object):
+        self.ViewObject = view_object
+        self.Object = view_object.Object
+
+    def claimChildren(self):
+        return []
+
+    def onDelete(self, view_object, _subelements):
+        obj = getattr(view_object, "Object", None) or self.Object
+        if obj is not None:
+            for parent in list(getattr(obj, "InList", [])):
+                if parent.isDerivedFrom("App::DocumentObjectGroup"):
+                    parent.removeObject(obj)
+        return True
+
+    def dumps(self):
+        return None
+
+    def loads(self, _state):
+        return
+
+
 def _ensure_property(obj, prop_type, prop_name, description, default_value=None):
     if prop_name not in obj.PropertiesList:
         obj.addProperty(prop_type, prop_name, PROPERTY_GROUP, description)
@@ -98,6 +157,17 @@ def _apply_stage_schema(stage, stage_name):
     for prop_type, prop_name, description, default_value in schema["properties"]:
         _ensure_property(stage, prop_type, prop_name, description, default_value)
 
+    _ensure_stage_proxies(stage)
+
+
+def _ensure_stage_proxies(stage):
+    if not isinstance(getattr(stage, "Proxy", None), StageProxy):
+        StageProxy(stage)
+
+    if FreeCAD.GuiUp and hasattr(stage, "ViewObject"):
+        if not isinstance(getattr(stage.ViewObject, "Proxy", None), StageViewProvider):
+            StageViewProvider(stage.ViewObject)
+
 
 def get_active_document():
     document = FreeCAD.ActiveDocument
@@ -122,6 +192,7 @@ def ensure_process_group(document=None):
 
     _ensure_process_properties(process)
     _assign_target_part(document, process)
+    upgrade_process_objects(document)
     return process
 
 
@@ -233,6 +304,19 @@ def add_stage_to_process(stage_name, document=None):
     stage = create_stage(document, process, stage_name)
     document.recompute()
     return stage
+
+
+def upgrade_process_objects(document=None):
+    document = document or FreeCAD.ActiveDocument
+    process = find_process_group(document)
+    if process is None:
+        return None
+
+    _ensure_process_properties(process)
+    for obj in list(getattr(process, "Group", [])):
+        if "StageType" in getattr(obj, "PropertiesList", []):
+            _ensure_stage_proxies(obj)
+    return process
 
 
 def get_stage_names():

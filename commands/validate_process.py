@@ -1,6 +1,7 @@
 import FreeCAD
 import FreeCADGui
 
+import tree
 from rule_engine.engine import ValidationEngine
 from rule_engine.models import Severity, ValidationResult, ValidationStatus
 
@@ -179,6 +180,7 @@ class ValidationResultsDialog:
 def run_validation(document=None, selection=None, show_dialog=True):
     document = document or FreeCAD.ActiveDocument
     try:
+        tree.upgrade_process_objects(document)
         result = ValidationEngine().validate(
             document,
             _selection() if selection is None else selection,
