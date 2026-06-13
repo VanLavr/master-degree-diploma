@@ -25,6 +25,15 @@ STAGE_LIBRARY = {
             ("App::PropertyFloat", "CaseDepthTarget", "Target case depth, mm", 0.8),
         ],
     },
+    "DiffusionStage": {
+        "label": "DiffusionStage",
+        "stage_type": "Diffusion",
+        "properties": [
+            ("App::PropertyFloat", "Temperature", "Diffusion temperature, C", 900.0),
+            ("App::PropertyFloat", "DurationMinutes", "Diffusion time, min", 60.0),
+            ("App::PropertyString", "Atmosphere", "Diffusion atmosphere", "Endogas"),
+        ],
+    },
     "QuenchingStage": {
         "label": "QuenchingStage",
         "stage_type": "Quenching",
@@ -65,8 +74,10 @@ def _ensure_property(obj, prop_type, prop_name, description, default_value=None)
 
 def _ensure_process_properties(process):
     _ensure_property(process, "App::PropertyString", "ProcessType", "Type of process", "Chemical Heat Treatment")
+    _ensure_property(process, "App::PropertyString", "ProcessKey", "Rule set key", "carburizing")
+    _ensure_property(process, "App::PropertyLink", "TargetObject", "Related solid model")
     _ensure_property(process, "App::PropertyString", "TargetPart", "Name of the related part or body", "")
-    _ensure_property(process, "App::PropertyString", "Material", "Part material", "Steel")
+    _ensure_property(process, "App::PropertyString", "Material", "Part material", "20\u0425")
     _ensure_property(process, "App::PropertyFloat", "TargetCaseDepth", "Required case depth, mm", 0.8)
     _ensure_property(process, "App::PropertyFloat", "TargetSurfaceHardness", "Required surface hardness, HRC", 62.0)
     _ensure_property(process, "App::PropertyFloat", "CoreHardnessTarget", "Required core hardness, HRC", 36.0)
@@ -115,10 +126,45 @@ def ensure_process_group(document=None):
 
 
 def _assign_target_part(document, process):
+    if "TargetObject" in process.PropertiesList and process.TargetObject is not None:
+        if not process.TargetPart:
+            process.TargetPart = process.TargetObject.Label
+        return
+
+    if process.TargetPart:
+        target = document.getObject(process.TargetPart)
+        if target is None:
+            target = next(
+                (
+                    obj
+                    for obj in document.Objects
+                    if getattr(obj, "Label", "") == process.TargetPart
+                ),
+                None,
+            )
+        if target is not None and hasattr(target, "Shape"):
+            process.TargetObject = target
+            return
+
     for obj in document.Objects:
         if getattr(obj, "TypeId", "") == "PartDesign::Body":
+            process.TargetObject = obj
             process.TargetPart = obj.Label
             return
+
+    candidates = []
+    for obj in document.Objects:
+        if not hasattr(obj, "Shape"):
+            continue
+        try:
+            if not obj.Shape.isNull():
+                candidates.append(obj)
+        except Exception:
+            continue
+
+    if len(candidates) == 1:
+        process.TargetObject = candidates[0]
+        process.TargetPart = candidates[0].Label
 
 
 def _next_stage_object_name(process, base_name):
